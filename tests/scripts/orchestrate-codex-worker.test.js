@@ -10,6 +10,12 @@ const SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'orchestrate-codex-wo
 
 console.log('=== Testing orchestrate-codex-worker.sh ===\n');
 
+if (process.platform === 'win32') {
+  console.log('  - skipped on Windows; orchestrate-codex-worker.sh is Unix-only');
+  console.log('\n=== Results: 0 passed, 0 failed ===');
+  process.exit(0);
+}
+
 let passed = 0;
 let failed = 0;
 
@@ -55,7 +61,7 @@ test('fails fast for an unreadable task file and records failure artifacts', () 
       'Handoff file should explain the task-file failure'
     );
   } finally {
-    fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 

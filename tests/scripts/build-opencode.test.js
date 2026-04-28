@@ -19,6 +19,14 @@ function runTest(name, fn) {
   }
 }
 
+function runNpm(args, options) {
+  if (process.platform === "win32") {
+    return spawnSync("cmd.exe", ["/d", "/s", "/c", ["npm.cmd", ...args].join(" ")], options)
+  }
+
+  return spawnSync("npm", args, options)
+}
+
 function main() {
   console.log("\n=== Testing build-opencode.js ===\n")
 
@@ -46,7 +54,7 @@ function main() {
       assert.ok(fs.existsSync(distEntry), ".opencode/dist/index.js should exist after build")
     }],
     ["npm pack includes the compiled OpenCode dist payload", () => {
-      const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
+      const result = runNpm(["pack", "--dry-run", "--json"], {
         cwd: repoRoot,
         encoding: "utf8",
       })
