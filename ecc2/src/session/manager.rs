@@ -1216,20 +1216,31 @@ fn send_signal(pid: u32, signal: i32) -> Result<()> {
 
 #[cfg(not(unix))]
 async fn kill_process(pid: u32) -> Result<()> {
-    let status = Command::new("taskkill")
-        .args(["/F", "/PID", &pid.to_string()])
+    let output = Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+        .output()
         .await
         .with_context(|| format!("Failed to invoke taskkill for process {pid}"))?;
 
-    if status.success() {
-        Ok(())
-    } else {
-        anyhow::bail!("taskkill failed for process {pid}");
+    if output.status.success() {
+        return Ok(());
     }
+
+    let combined_output = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let normalized_output = combined_output.to_ascii_lowercase();
+    if normalized_output.contains("not found") || normalized_output.contains("not running") {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "taskkill failed for process {pid}: {}",
+        combined_output.trim()
+    );
 }
 
 pub struct SessionStatus {
@@ -1618,6 +1629,7 @@ mod tests {
     use anyhow::{Context, Result};
     use chrono::{Duration, Utc};
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::process::Command as StdCommand;
@@ -1709,6 +1721,10 @@ mod tests {
         }
     }
 
+    fn normalize_newlines(input: &str) -> String {
+        input.replace("\r\n", "\n")
+    }
+
     fn init_git_repo(path: &Path) -> Result<()> {
         fs::create_dir_all(path)?;
         run_git(path, ["init", "-q"])?;
@@ -1735,17 +1751,32 @@ mod tests {
     }
 
     fn write_fake_claude(root: &Path) -> Result<(PathBuf, PathBuf)> {
+        #[cfg(windows)]
+        let script_path = root.join("fake-claude.cmd");
+        #[cfg(not(windows))]
         let script_path = root.join("fake-claude.sh");
         let log_path = root.join("fake-claude.log");
+
+        #[cfg(windows)]
+        let script = format!(
+            "@echo off\r\nset \"LOG_PATH={}\"\r\necho %CD%>\"%LOG_PATH%\"\r\necho %*>>\"%LOG_PATH%\"\r\n:loop\r\nping -n 2 127.0.0.1 >nul\r\ngoto loop\r\n",
+            log_path.display()
+        );
+
+        #[cfg(not(windows))]
         let script = format!(
             "#!/usr/bin/env python3\nimport os\nimport pathlib\nimport signal\nimport sys\nimport time\n\nlog_path = pathlib.Path(r\"{}\")\nlog_path.write_text(os.getcwd() + \"\\n\", encoding=\"utf-8\")\nwith log_path.open(\"a\", encoding=\"utf-8\") as handle:\n    handle.write(\" \".join(sys.argv[1:]) + \"\\n\")\n\ndef handle_term(signum, frame):\n    raise SystemExit(0)\n\nsignal.signal(signal.SIGTERM, handle_term)\nwhile True:\n    time.sleep(0.1)\n",
             log_path.display()
         );
 
         fs::write(&script_path, script)?;
-        let mut permissions = fs::metadata(&script_path)?.permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&script_path, permissions)?;
+
+        #[cfg(unix)]
+        {
+            let mut permissions = fs::metadata(&script_path)?.permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&script_path, permissions)?;
+        }
 
         Ok((script_path, log_path))
     }
@@ -2088,7 +2119,7 @@ mod tests {
         assert!(outcome.cleaned_worktree);
         assert!(!outcome.already_up_to_date);
         assert_eq!(
-            fs::read_to_string(repo_root.join("feature.txt"))?,
+            normalize_newlines(&fs::read_to_string(repo_root.join("feature.txt"))?),
             "ready to merge\n"
         );
 
@@ -2192,7 +2223,7 @@ mod tests {
         assert!(outcome.failures.is_empty());
 
         assert_eq!(
-            fs::read_to_string(repo_root.join("merged.txt"))?,
+            normalize_newlines(&fs::read_to_string(repo_root.join("merged.txt"))?),
             "bulk merge\n"
         );
         assert!(db

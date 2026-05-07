@@ -3886,7 +3886,7 @@ diff --git a/src/next.rs b/src/next.rs
         );
         assert!(!worktree.path.exists(), "worktree path should be removed");
         assert_eq!(
-            std::fs::read_to_string(repo_root.join("dashboard.txt"))?,
+            std::fs::read_to_string(repo_root.join("dashboard.txt"))?.replace("\r\n", "\n"),
             "dashboard merge\n"
         );
 
@@ -3965,7 +3965,7 @@ diff --git a/src/next.rs b/src/next.rs
             .worktree
             .is_none());
         assert_eq!(
-            std::fs::read_to_string(repo_root.join("merged.txt"))?,
+            std::fs::read_to_string(repo_root.join("merged.txt"))?.replace("\r\n", "\n"),
             "dashboard bulk merge\n"
         );
 
