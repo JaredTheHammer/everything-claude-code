@@ -249,10 +249,20 @@ mod tests {
 
         let output_store = SessionOutputStore::default();
         let mut rx = output_store.subscribe();
-        let mut command = Command::new("/bin/sh");
-        command
-            .arg("-c")
-            .arg("printf 'alpha\\n'; printf 'beta\\n' >&2");
+        #[cfg(windows)]
+        let command = {
+            let mut command = Command::new("cmd");
+            command.args(["/C", "echo alpha&echo beta>&2"]);
+            command
+        };
+        #[cfg(not(windows))]
+        let command = {
+            let mut command = Command::new("/bin/sh");
+            command
+                .arg("-c")
+                .arg("printf 'alpha\\n'; printf 'beta\\n' >&2");
+            command
+        };
 
         let status =
             capture_command_output(db_path.clone(), session_id.clone(), command, output_store)
