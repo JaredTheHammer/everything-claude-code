@@ -67,6 +67,14 @@ function makeHermeticCodexEnv(homeDir, codexDir, extraEnv = {}) {
 let passed = 0;
 let failed = 0;
 
+if (os.platform() === 'win32') {
+  console.log('  - install-global-git-hooks.sh quoted paths (skipped on Windows)');
+  console.log('  - sync-ecc-to-codex.sh baseline tests (skipped on Windows; shell helpers are Unix-only)');
+  console.log(`\nPassed: ${passed}`);
+  console.log(`Failed: ${failed}`);
+  process.exit(0);
+}
+
 // Windows NTFS does not allow double-quote characters in file paths,
 // so the quoted-path shell-injection test is only meaningful on Unix.
 if (os.platform() === 'win32') {
